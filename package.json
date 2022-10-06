@@ -1,0 +1,29 @@
+{
+  "name": "dev-helper",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "babel-node": "babel-node --presets=latest",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon --exec babel-node app.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.27.2",
+    "esm": "^3.2.25",
+    "jimp": "^0.16.2",
+    "json2csv": "^5.0.7",
+    "lodash": "^4.17.21",
+    "mime": "^3.0.0",
+    "moment": "^2.29.4",
+    "pg": "^8.8.0"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.18.10",
+    "@babel/core": "^7.19.1",
+    "@babel/node": "^7.19.1",
+    "@babel/preset-env": "^7.19.1"
+  }
+}

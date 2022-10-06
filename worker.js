@@ -108,7 +108,7 @@ parentPort.on('message', async (message) => {
 	switch (message.action) {
 		case 'device_id':
 			device_id = message.device_id;
-			console.log( 'device_id', message.device_id );
+			// console.log( 'device_id', message.device_id );
 			emitter.emit('empty');
 			break;
 		case 'newItem':

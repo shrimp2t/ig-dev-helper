@@ -6,7 +6,7 @@ const process = require('node:process');
 let allLogs = {};
 let queue = [];
 let workers = [];
-const numberWorkers = 10;
+const numberWorkers = 20;
 let gettingQueue = false;
 const perPage = 1;
 const mainEmitter = new EventEmitter();
@@ -72,15 +72,16 @@ const getItemsForQueue = async (number = 10) => {
 	gettingQueue = true;
 	lockQueue = true;
 
-	// const testArray = [];
-	// for (let i = test_start; i <= test_start + 15; i++) {
-	// 	testArray.push(i);
-	// }
-	// test_start += 15;
-	// queue = [...queue, ...testArray];
-	// gettingQueue = false;
-	// lockQueue = false;
-	// return;
+	const testArray = [];
+	for (let i = test_start; i <= test_start + 15; i++) {
+		testArray.push(i);
+	}
+	test_start += 15;
+	queue = [...queue, ...testArray];
+	gettingQueue = false;
+	lockQueue = false;
+	return;
+
 
 	await getInteractionsForQueue(number).then(items => {
 		console.log('Items', items);
@@ -119,7 +120,7 @@ const getItems = () => {
 }
 
 
-const addWorker = () => {
+const addWorker = (device_id = `00`) => {
 	const worker = new Worker('./worker.js',
 		{
 			execArgv: [...process.execArgv, '--unhandled-rejections=strict']
@@ -210,7 +211,6 @@ const addWorker = () => {
 				break;
 
 
-
 		}
 		// console.log('Parrent queueen child: ', i, message);  // Prints 'Hello, world!'.
 	});
@@ -231,13 +231,22 @@ const addWorker = () => {
 		mainEmitter.emit('exit');
 	})
 
+
 	workers.push(worker);
-	console.log('Worker Ready: ', workers.length, ' -> ', worker.threadId);
+	console.log('Worker Ready: ', device_id,  workers.length, ' -> ', worker.threadId);
+
+	// worker.postMessage({
+	// 	action: 'device_id',
+	// 	item: device_id,
+	// });
+
 	setTimeout(() => {
 		const newItem = getItems();
 		worker.postMessage({
-			action: 'newItem',
-			item: newItem,
+			// action: 'newItem',
+			// item: newItem,
+			action: 'device_id',
+			device_id
 		});
 	}, 1500);
 }
@@ -266,9 +275,8 @@ const init = async () => {
 	});
 
 	for (let i = 0; i < numberWorkers; i++) {
-		addWorker();
+		addWorker(i);
 	} // end loop init workers.
-
 }
 
 

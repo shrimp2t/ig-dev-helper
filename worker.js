@@ -1,6 +1,6 @@
 const { parentPort, threadId } = require('node:worker_threads');
 const EventEmitter = require('node:events');
-
+const process = require('node:process');
 let status = 'idle';
 let statusTimeout = null;
 const idleTime = 3 * 60 * 1000;
@@ -8,6 +8,8 @@ const MAX_REQEST_PER_PROXY = 10;
 let workingData = null;
 const emitter = new EventEmitter();
 let logs = [];
+let device_id = null;
+
 
 const waitForCheckStatus = () => {
 	if (!statusTimeout) {
@@ -85,7 +87,9 @@ emitter.on('work', async () => {
 
 	//END  Do something with workingData 
 
-	
+	// 1 phone = 1 worker
+
+
 
 	// const result = await crawler(item.link);
 	if (result?.success) {
@@ -100,8 +104,13 @@ emitter.on('work', async () => {
 
 // Listen message from parent.
 parentPort.on('message', async (message) => {
-	// console.log('Parent Say: ', message);
+	//  console.log('Parent Say: ', message);
 	switch (message.action) {
+		case 'device_id':
+			device_id = message.device_id;
+			console.log( 'device_id', message.device_id );
+			emitter.emit('empty');
+			break;
 		case 'newItem':
 		case 'newItems':
 			statusTimeout = null;
@@ -134,5 +143,4 @@ parentPort.on('message', async (message) => {
 });
 
 
-
-emitter.emit('next');
+emitter.emit('device_id');

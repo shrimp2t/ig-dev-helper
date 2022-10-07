@@ -1,15 +1,13 @@
 const { parentPort, threadId } = require('node:worker_threads');
 const EventEmitter = require('node:events');
-const process = require('node:process');
 let status = 'idle';
 let statusTimeout = null;
 const idleTime = 3 * 60 * 1000;
 const MAX_REQEST_PER_PROXY = 10;
 let workingData = null;
-const emitter = new EventEmitter();
+const device = new EventEmitter();
 let logs = [];
-let device_id = null;
-
+global.device_id = null;
 
 const waitForCheckStatus = () => {
 	if (!statusTimeout) {
@@ -22,53 +20,51 @@ const waitForCheckStatus = () => {
 			});
 		}, idleTime);
 	}
-}
+} 
 
-const sendToParent = (data) => {
+const sendMessageToParent = (data) => {
 	parentPort.postMessage({
 		...data,
 		threadId,
+		device: global.device_id,
 		logs
 	});
 }
 
-emitter.on('empty', () => {
-	// Send to parent
-	sendToParent({
-		action: 'newItems',
+const whenDeviceActionReady = () => {
+	sendMessageToParent({
+		action: 'newItem',
 	});
 	waitForCheckStatus();
-});
+}
 
-emitter.on('done', (data) => {
+const whenDeviceActionDone = (data) => {
 	logs.push(workingData);
 	workingData = null;
 	// Send to parent
-	sendToParent({
+	sendMessageToParent({
 		...data,
 		action: 'itemDone',
 	});
 
 	// console.log('Worker-log-' + threadId, logs);
-	emitter.emit('empty');
-});
+	device.emit('empty');
+}
 
-emitter.on('error', (data) => {
-	sendToParent({
+const whenDeviceActionError = (data) => {
+	sendMessageToParent({
 		...data,
 		action: 'itemError',
 	});
-	emitter.emit('work');
-});
-
+	device.emit('work');
+}
 
 function randomInteger(min, max) {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-emitter.on('work', async () => {
 
-
+const deviceActionWork = async () => {
 
 	// Main action here.
 
@@ -87,32 +83,29 @@ emitter.on('work', async () => {
 
 	//END  Do something with workingData 
 
-	// 1 phone = 1 worker
-
+	// 1 device = 1 worker
 
 
 	// const result = await crawler(item.link);
 	if (result?.success) {
-		emitter.emit('done', { workingData, ...result });
+		device.emit('done', { workingData, ...result });
 	} else {
-		emitter.emit('error', { workingData, ...result });
+		device.emit('error', { workingData, ...result });
 	}
 	// End main action here.
 
-});
+}
 
 
-// Listen message from parent.
-parentPort.on('message', async (message) => {
+const deviceListingParentMessage = async (message) => {
 	//  console.log('Parent Say: ', message);
 	switch (message.action) {
 		case 'device_id':
-			device_id = message.device_id;
-			// console.log( 'device_id', message.device_id );
-			emitter.emit('empty');
+		case 'get_device':
+			global.device_id = message.device_id;
+			device.emit('ready');
 			break;
 		case 'newItem':
-		case 'newItems':
 			statusTimeout = null;
 			status = 'working';
 			if (message.item) {
@@ -123,24 +116,40 @@ parentPort.on('message', async (message) => {
 
 			if (workingData) {
 				clearTimeout(statusTimeout);
-				emitter.emit('work');
+				device.emit('work');
 			}
 			break;
 		case 'status':
-			sendToParent({
+			sendMessageToParent({
 				status,
 				action: 'status',
 			});
 			break;
 		case 'retry':
 			setTimeout(() => {
-				sendToParent({
+				sendMessageToParent({
 					action: message.retryAction,
 				});
 			}, message.time)
 			break;
 	}
-});
+}
 
 
-emitter.emit('device_id');
+device.on('empty', whenDeviceActionReady);
+device.on('ready', whenDeviceActionReady);
+device.on('done', whenDeviceActionDone);
+device.on('error', whenDeviceActionError);
+device.on('work', deviceActionWork);
+// Listen message from parent.
+parentPort.on('message', deviceListingParentMessage);
+
+
+setTimeout(() => {
+	//console.log('Start get device');
+	// Get device id
+	sendMessageToParent({
+		status,
+		action: 'get_device',
+	});
+}, randomInteger(1, 4) * 1000);

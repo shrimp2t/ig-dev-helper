@@ -5,7 +5,7 @@ const EventEmitter = require('node:events');
 const process = require('node:process');
 let allLogs = {};
 let queue = [];
-let workers = [];
+let devices = [];
 const numberWorkers = 20;
 let gettingQueue = false;
 const perPage = 1;
@@ -55,6 +55,14 @@ const getInteractionsForQueue = async (interaction_limit = 10) => {
 					task_list: el?.task_list ? JSON.parse(el?.task_list) : {}
 				});
 			});
+
+			// Push the last action to device known that the interactions acc ended.
+			queueItems.push( {
+				// ...el,
+				id: el.id,
+				interaction_ended: true,
+			} );
+
 		}
 		return el.id;
 	});
@@ -72,6 +80,8 @@ const getItemsForQueue = async (number = 10) => {
 	gettingQueue = true;
 	lockQueue = true;
 
+	// Start testing data....
+	/*
 	const testArray = [];
 	for (let i = test_start; i <= test_start + 15; i++) {
 		testArray.push(i);
@@ -81,10 +91,13 @@ const getItemsForQueue = async (number = 10) => {
 	gettingQueue = false;
 	lockQueue = false;
 	return;
+	*/
+
+	// END testing data....
 
 
 	await getInteractionsForQueue(number).then(items => {
-		console.log('Items', items);
+		// console.log('Items', items);
 		if (items) {
 			queue = [...queue, ...items];
 			if (queue.length) {
@@ -120,43 +133,38 @@ const getItems = () => {
 }
 
 
-const addWorker = (device_id = `00`) => {
-	const worker = new Worker('./worker.js',
+const addDevice = (device_id = `00`) => {
+	const device = new Worker('./device.js',
 		{
 			execArgv: [...process.execArgv, '--unhandled-rejections=strict']
 		}
 	);
 
-	const logKey = 'w-' + worker.threadId;
+	const logKey = 'w-' + device.threadId;
 
 	allLogs[logKey] = [];
-	worker.on('message', (message) => {
 
+	/**
+	 * Listening children (devices) message
+	 */
+	device.on('message', (message) => {
+
+		// Check dup ---------------------
 		if (!allLogs[logKey]) {
 			allLogs[logKey] = [];
 		}
+
 		allLogs[logKey].length = 0;
 		allLogs[logKey] = message?.logs || [];
 
-		let flatArray = [];
-		Object.values(allLogs).map(ar => {
-			flatArray = flatArray.concat(ar);
-		});
-
-		const duplicates = flatArray.filter((item, index) => index !== flatArray.indexOf(item));
-
-		console.log('allLogs', allLogs);
-		const duplicates2 = queue.filter((item, index) => index !== queue.indexOf(item));
-		console.log('Queue_Check', duplicates2);
-		console.log(' (' + test_start + ') Items,  Duplicates', duplicates);
-
+		// END Check dup ---------------------
 
 		switch (message.action) {
 			case 'newItems':
 			case 'newItem':
 
 				if (lockQueue) {
-					worker.postMessage({
+					device.postMessage({
 						action: 'retry',
 						retryAction: message.action,
 						time: randomInteger(2, 6) * 100, // retry after 10 seconds
@@ -167,15 +175,15 @@ const addWorker = (device_id = `00`) => {
 
 					if (newItem) {
 						// console.log( 'Parent Send Item1: ', newItem );
-						// Send data to worker
-						worker.postMessage({
+						// Send data to device
+						device.postMessage({
 							action: message.action,
 							item: newItem,
 						});
 					} else {
 						// console.log( 'Parent Send must retry: ', newItem );
-						// Send data to worker
-						worker.postMessage({
+						// Send data to device
+						device.postMessage({
 							action: 'retry',
 							retryAction: message.action,
 							time: 1 * 1000, // retry after 10 seconds
@@ -195,7 +203,7 @@ const addWorker = (device_id = `00`) => {
 				break;
 			case 'itemDone':
 				// save Item do db
-				// console.log(worker.threadId, ':',  message)
+				// console.log(device.threadId, ':',  message)
 				switch (message.type) {
 					case 'links':
 						saveLinks(message.data);
@@ -206,49 +214,38 @@ const addWorker = (device_id = `00`) => {
 				}
 				break;
 			case 'itemError':
-				console.log(worker.threadId, 'ERROR: ', message);
+				console.log(device.threadId, 'ERROR: ', message);
 				updateLink(message.item.link, 'error');
 				break;
-
-
+			case 'get_device':
+				device.postMessage({
+					action: message.action,
+					device_id: device_id,
+				});
+				break;
 		}
-		// console.log('Parrent queueen child: ', i, message);  // Prints 'Hello, world!'.
 	});
-	worker.on('messageerror', (e) => {
-		console.log(worker.threadId, 'messageerror', e);
+
+	device.on('messageerror', (e) => {
+		console.log(device.threadId, 'messageerror', e);
 	})
-	worker.on('error', (e) => {
-		console.log(worker.threadId, 'error:', e);
-		workers = workers.filter(item => item.threadId !== worker.threadId)
+	device.on('error', (e) => {
+		console.log(device.threadId, 'error:', e);
+		devices = devices.filter(item => item.threadId !== device.threadId)
 		mainEmitter.emit('exit');
 	});
 
-	worker.on('exit', (e) => {
-		console.log(worker.threadId, 'exit:', e);
-		workers = workers.filter(item => {
-			return item.threadId !== worker.threadId;
+	device.on('exit', (e) => {
+		console.log(device.threadId, 'exit:', e);
+		devices = devices.filter(item => {
+			return item.threadId !== device.threadId;
 		})
 		mainEmitter.emit('exit');
 	})
 
+	device._device_id = device_id;
+	devices.push(device);
 
-	workers.push(worker);
-	console.log('Worker Ready: ', device_id,  workers.length, ' -> ', worker.threadId);
-
-	// worker.postMessage({
-	// 	action: 'device_id',
-	// 	item: device_id,
-	// });
-
-	setTimeout(() => {
-		const newItem = getItems();
-		worker.postMessage({
-			// action: 'newItem',
-			// item: newItem,
-			action: 'device_id',
-			device_id
-		});
-	}, 1500);
 }
 
 const init = async () => {
@@ -256,32 +253,54 @@ const init = async () => {
 	// Do something before start.
 
 	await getItemsForQueue();
-	console.log('Queue ready:', queue.length);
 
-
-	mainEmitter.on('emptyQueue', async (event, queueener) => {
+	mainEmitter.on('emptyQueue', async () => {
 		console.log('Empty queue wait for add new');
 		await getItemsForQueue();
 	});
 
-	mainEmitter.on('queueReady', async (event, queueener) => {
-		console.log('Queue ready');
+	mainEmitter.on('queueReady', async () => {
+		console.log('Queue ready: ', queue.length);
 	});
 
+	/**
+	 * When device exit, crash, stop,.....
+	 * 
+	 * May me need to re-add device.
+	 */
 	mainEmitter.on('exit', () => {
-		if (workers.length < numberWorkers) {
-			// addWorker();
+		if (devices.length < numberWorkers) {
+			// addDevice();
 		}
 	});
 
 	for (let i = 0; i < numberWorkers; i++) {
-		addWorker(i);
-	} // end loop init workers.
+		addDevice(i);
+	} // end loop init devices.
 }
 
 
 if (isMainThread) {
 	init();
+
+	/**
+	 * Show the bug for testing purposes
+	 */
+	setInterval(() => {
+		let flatArray = [];
+		Object.values(allLogs).map(ar => {
+			flatArray = flatArray.concat(ar);
+		});
+
+		const duplicates = flatArray.filter((item, index) => index !== flatArray.indexOf(item));
+		console.log('allLogs', allLogs);
+		const duplicates2 = queue.filter((item, index) => index !== queue.indexOf(item));
+		console.log('Queue_Check', duplicates2);
+		console.log(`Create ${test_start} Items,  Duplicates`, duplicates);
+
+	}, 2000);
+
+
 }
 
 
